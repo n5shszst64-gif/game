@@ -323,7 +323,8 @@
     tuck: 'TuckOpen.png',
     graham: 'GrahamOpen.png',
   };
-  const ENEMY_SPRITE_VOMIT_SOURCES = {
+  // Reaction sprite shown when the bonus enemy is hit with a non-matching shot.
+  const ENEMY_SPRITE_REACTION_SOURCES = {
     finn: 'FinnVomit.png',
     aubrey: 'aubreyVomit.png',
     ashley: 'AshleyVomit.png',
@@ -338,7 +339,7 @@
       enemySpriteLoaded[key] = false;
       img.onload = () => { enemySpriteLoaded[key] = true; };
       const source = vomit
-        ? ENEMY_SPRITE_VOMIT_SOURCES[spriteType]
+        ? ENEMY_SPRITE_REACTION_SOURCES[spriteType]
         : (open ? ENEMY_SPRITE_OPEN_SOURCES[spriteType] : ENEMY_SPRITE_SOURCES[spriteType]);
       img.src = source || ENEMY_SPRITE_SOURCES[spriteType];
       enemySpriteImages[key] = img;
@@ -495,6 +496,22 @@
     img.src = src;
     return img;
   });
+
+  // Tuck and Graham (the two dogs) fire poop.png instead of a plain bolt.
+  let poopBulletLoaded = false;
+  const poopBulletImg = new Image();
+  poopBulletImg.onload = () => { poopBulletLoaded = true; };
+  poopBulletImg.src = 'poop.png';
+  function drawEnemyBulletSprite(b) {
+    if (!b.poop || !poopBulletLoaded) return false;
+    ctx.save();
+    ctx.translate(b.x, b.y);
+    const drawW = 24;
+    const drawH = drawW * (poopBulletImg.naturalHeight || 1) / (poopBulletImg.naturalWidth || 1);
+    ctx.drawImage(poopBulletImg, -drawW / 2, -drawH / 2, drawW, drawH);
+    ctx.restore();
+    return true;
+  }
 
   const player = {
     x: W / 2, y: H - 60, w: 40, h: 26, cooldown: 0, invulnerable: 0,
@@ -756,6 +773,7 @@
     enemies.forEach(e => {
       if (!e.alive) return;
       e.mouthT += dt;
+      const isPooper = e.spriteType === 'tuck' || e.spriteType === 'graham';
       if (!e.diving) {
         e.x = e.baseX + formationOffsetX;
         e.y = e.baseY + formationOffsetY;
@@ -769,7 +787,7 @@
         }
         // occasional gentle shot
         if (Math.random() < EASY.enemyShotChance) {
-          enemyBullets.push({ x: e.x, y: e.y + e.r, w: 4, h: 10, speed: EASY.enemyShotSpeed });
+          enemyBullets.push({ x: e.x, y: e.y + e.r, w: 4, h: 10, speed: EASY.enemyShotSpeed, poop: isPooper });
         }
       } else {
         e.diveT += dt;
@@ -777,7 +795,7 @@
         e.x = e.diveStartX + Math.sin(t * 2) * 60;
         e.y = e.diveStartY + t * EASY.diveSpeed;
         if (Math.random() < EASY.enemyShotChance * 3) {
-          enemyBullets.push({ x: e.x, y: e.y + e.r, w: 4, h: 10, speed: EASY.enemyShotSpeed * 1.1 });
+          enemyBullets.push({ x: e.x, y: e.y + e.r, w: 4, h: 10, speed: EASY.enemyShotSpeed * 1.1, poop: isPooper });
         }
         if (e.y > H + 40) {
           // return to formation from the top
@@ -808,8 +826,8 @@
             bonusEnemy = null;
           } else {
             bonusEnemy.reacting = true;
-            bonusEnemy.reactT = 1.3;
-            groupVomitT = 1.3;
+            bonusEnemy.reactT = 2;
+            groupVomitT = 2;
             score += -10000;
             spawnParticles(bonusEnemy.x, bonusEnemy.y, '#ff6ea9');
             if (!muted) playAudioFile('hard-burp.mp3', 0.9);
@@ -979,18 +997,19 @@
       }
     });
     ctx.fillStyle = '#ff6ea9';
-    enemyBullets.forEach(b => ctx.fillRect(b.x - b.w / 2, b.y - b.h / 2, b.w, b.h));
+    enemyBullets.forEach(b => {
+      if (!drawEnemyBulletSprite(b)) {
+        ctx.fillRect(b.x - b.w / 2, b.y - b.h / 2, b.w, b.h);
+      }
+    });
 
     // enemies
     enemies.forEach(e => {
       if (!e.alive) return;
       const mouthOpen = Math.sin(e.mouthT * 6) > 0;
-      const canVomit = e.spriteType === 'finn' ||
-                       e.spriteType === 'aubrey' ||
-                       e.spriteType === 'ashley' ||
-                       e.spriteType === 'karl';
-      const vomiting = groupVomitT > 0 && canVomit;
-      drawEnemySprite(e.x, e.y, e.r, e.palette, e.spriteType, !vomiting && mouthOpen, vomiting);
+      const canReact = Object.prototype.hasOwnProperty.call(ENEMY_SPRITE_REACTION_SOURCES, e.spriteType);
+      const reacting = groupVomitT > 0 && canReact;
+      drawEnemySprite(e.x, e.y, e.r, e.palette, e.spriteType, !reacting && mouthOpen, reacting);
     });
 
     if (bonusEnemy && bonusEnemy.alive) {
