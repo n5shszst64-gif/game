@@ -347,6 +347,16 @@ window.addEventListener("keyup", function(event) {
 }); 
 
 function preventDefaultTouch(event) { 
+  // Don't swallow taps on buttons or touch controls -- calling
+  // preventDefault() on touchstart cancels the synthetic "click"
+  // event that follows, which is how startButton/restartButton
+  // are wired up. Without this check, taps on those buttons never
+  // register on iPad/iPhone even though mouse clicks work fine on
+  // desktop.
+  const target = event.target;
+  if (target && target.closest && target.closest("button, .game-btn, .touch-control")) {
+    return;
+  }
   event.preventDefault(); 
 } 
 document.addEventListener("touchmove", preventDefaultTouch, { passive: false }); 
