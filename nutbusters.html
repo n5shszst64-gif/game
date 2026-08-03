@@ -1,0 +1,874 @@
+<!DOCTYPE html>
+<html lang="en"> 
+<head> 
+  <meta charset="UTF-8"> 
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Galaxy Nut Blaster</title>
+  <style> 
+    * { box-sizing: border-box; } 
+    body { margin: 0; min-height: 100vh; display: flex; justify-content: center; align-items: center; background: radial-gradient(circle at 20% 20%, #18214a 0%, transparent 30%), radial-gradient(circle at 80% 70%, #1b1238 0%, transparent 35%), #03040d; color: white; font-family: Arial, Helvetica, sans-serif; overflow: hidden; overscroll-behavior: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; } 
+    #gameWrapper { position: relative; width: min(100vw - 24px, calc((100vh - 24px) * 16 / 9), 1000px); max-height: calc(100vh - 24px); aspect-ratio: 16 / 9; border: 3px solid #4cffd7; box-shadow: 0 0 20px #25ffd0, 0 0 60px rgba(0, 255, 210, 0.25); overflow: hidden; background: #030611; touch-action: none; } 
+    canvas { width: 100%; height: 100%; display: block; touch-action: none; } 
+    #hud { position: absolute; top: 16px; left: 20px; right: 20px; display: flex; justify-content: space-between; font-size: clamp(16px, 2vw, 25px); font-weight: bold; color: #ffffff; text-shadow: 0 0 8px #00ffff, 2px 2px 3px #000; pointer-events: none; } 
+    #instructions { position: absolute; bottom: 14px; left: 50%; transform: translateX(-50%); color: rgba(255, 255, 255, 0.75); font-size: clamp(10px, 1.3vw, 15px); white-space: nowrap; pointer-events: none; } 
+    .touch-controls { position: absolute; inset: 0; pointer-events: none; z-index: 5; } 
+    .touch-controls.hidden { display: none; } 
+    .touch-control { position: absolute; pointer-events: auto; border: none; color: white; background: rgba(255, 255, 255, 0.16); border: 1px solid rgba(255, 255, 255, 0.25); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3); touch-action: none; } 
+    .virtual-joystick { left: 24px; bottom: 24px; width: 140px; height: 140px; border-radius: 50%; } 
+    .virtual-joystick .knob { position: absolute; left: 50%; top: 50%; width: 54px; height: 54px; border-radius: 50%; background: rgba(255, 255, 255, 0.9); box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.15); transform: translate(-50%, -50%); } 
+    .fire-button { right: 24px; bottom: 24px; width: 140px; height: 140px; border-radius: 50%; font-size: clamp(22px, 3vw, 30px); font-weight: bold; letter-spacing: 0.08em; text-transform: uppercase; } 
+    .fire-button:active, .virtual-joystick:active { transform: scale(0.97); } 
+    .orientation-hint { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; background: rgba(2, 8, 20, 0.86); text-align: center; padding: 24px; z-index: 10; } 
+    .orientation-hint.visible { display: flex; } 
+    .orientation-hint .card { max-width: 320px; padding: 24px 28px; border: 2px solid rgba(255, 255, 255, 0.22); border-radius: 18px; background: rgba(255, 255, 255, 0.12); box-shadow: 0 12px 30px rgba(0, 0, 0, 0.25); font-size: clamp(20px, 4vw, 28px); font-weight: bold; line-height: 1.3; } 
+    .orientation-hint .card span { display: block; margin-top: 8px; font-size: clamp(14px, 2.3vw, 18px); font-weight: normal; opacity: 0.8; } 
+    
+    /* START SCREEN & GAME OVER SCREENS */
+    #startScreen, #gameOver { position: absolute; inset: 0; display: flex; flex-direction: column; justify-content: center; align-items: center; background: rgba(0, 0, 10, 0.85); text-align: center; padding: 20px; z-index: 15; } 
+    #gameOver { display: none; }
+    
+    #startScreen h1, #gameOver h1 { margin: 0 0 10px 0; font-size: clamp(36px, 7vw, 80px); color: #ffdf59; text-shadow: 0 0 20px #ff8c00, 4px 4px 0 #6b2500; } 
+    #startScreen p, #gameOver p { font-size: clamp(16px, 2.5vw, 26px); margin: 5px 0 20px 0; color: #d7faff; } 
+    
+    .game-btn { padding: 14px 28px; border: 2px solid #ffffff; border-radius: 8px; background: #18cfa9; color: #02140f; font-size: clamp(18px, 2.5vw, 24px); font-weight: bold; cursor: pointer; box-shadow: 0 0 18px #18cfa9; transition: transform 0.1s; } 
+    .game-btn:hover { transform: scale(1.08); background: #5dffe0; } 
+
+    /* RAPID FLASHING ANIMATION WHEN PRESSED */
+    #startButton.flashing {
+      animation: rapidFlash 0.15s infinite alternate ease-in-out;
+      pointer-events: none; /* Prevent double clicks */
+    }
+
+    @keyframes rapidFlash {
+      0% {
+        transform: scale(1.05);
+        background: #18cfa9;
+        box-shadow: 0 0 12px #18cfa9;
+        color: #02140f;
+      }
+      100% {
+        transform: scale(1.15);
+        background: #ffffff;
+        box-shadow: 0 0 40px #ffffff, 0 0 20px #5dffe0;
+        color: #000000;
+      }
+    }
+  </style>
+</head>
+<body>
+<div id="gameWrapper">
+  <canvas id="gameCanvas" width="1000" height="562"></canvas>
+
+  <div id="touchControls" class="touch-controls hidden">
+      <div id="virtualJoystick" class="touch-control virtual-joystick" aria-label="Virtual joystick">
+          <div class="knob"></div>
+      </div>
+      <button id="fireButton" class="touch-control fire-button" type="button">FIRE</button>
+  </div>
+
+  <div id="orientationHint" class="orientation-hint" aria-live="polite">
+      <div class="card">
+          Rotate your iPad
+          <span>for the best horizontal play view</span>
+      </div>
+  </div>
+
+  <div id="hud">
+      <div>
+          SCORE:
+          <span id="score">0</span>
+      </div>
+      <div>
+          LIVES:
+          <span id="lives">3</span>
+      </div>
+  </div>
+
+  <div id="instructions">
+      MOVE: ARROWS / WASD / TOUCH
+      &nbsp; • &nbsp;
+      FIRE: SPACE / TOUCH
+  </div>
+
+  <!-- START SCREEN -->
+  <div id="startScreen">
+      <!-- EDITABLE TEXT: Title -->
+      <h1>GALAXY NUT BLASTER</h1>
+      
+      <!-- EDITABLE TEXT: Subtitle / Instructions -->
+      <p>Defend the galaxy from space nuts! Defeat pistachios and cashews to win.</p>
+      
+      <button id="startButton" class="game-btn">
+          <!-- EDITABLE TEXT: Button Label -->
+          START GAME
+      </button>
+  </div>
+
+  <!-- GAME OVER SCREEN -->
+  <div id="gameOver">
+      <h1>GAME OVER</h1>
+      <p>
+          Final Score:
+          <span id="finalScore">0</span>
+      </p>
+      <button id="restartButton" class="game-btn">
+          PLAY AGAIN
+      </button>
+  </div>
+</div>
+
+<script>
+/* ========================================================= 
+   GALAXY NUT BLASTER ASSET LIST 
+   ========================================================= */ 
+const ASSETS = { 
+  playerFrames: [
+    "assets/player-1.png",
+    "assets/player-2.png",
+    "assets/player-3.png"
+  ], 
+  startMusic: "assets/startmusic.mp3",
+  inflateSound: "assets/inflate.m4a",
+  deflateSound: "assets/deflate.m4a",
+  explosionSound: "assets/explosion.mp3",
+  pistachioDeathSound: "assets/death.mp3",
+  cashewDeathSound: "assets/cashews-death.mp3",
+  playerLaserSound: "assets/lasersound.mp3",
+  endSong: "assets/endsong.mp3",
+  playerLaser: "assets/player-laser.png", 
+  pistachioFrames: [ 
+    "assets/pistachio-closed.png", 
+    "assets/pistachio-opening.png", 
+    "assets/pistachio-fire.png", 
+    "assets/pistachio-closing.png" 
+  ], 
+  cashewFrames: [ 
+    "assets/cashew-1.png", 
+    "assets/cashew-2.png", 
+    "assets/cashew-3.png", 
+    "assets/cashew-4.png" 
+  ], 
+  greenLaser: "assets/green-laser.png", 
+  beigeLaser: "assets/beige-laser.png", 
+  pistachioExplosion: [ 
+    "assets/pistachio-explosion-1.png", 
+    "assets/pistachio-explosion-2.png", 
+    "assets/pistachio-explosion-3.png", 
+    "assets/pistachio-explosion-4.png" 
+  ], 
+  cashewExplosion: "assets/cashewexploded.png" 
+}; 
+
+/* ========================================================= 
+   CANVAS 
+   ========================================================= */ 
+const canvas = document.getElementById("gameCanvas"); 
+const ctx = canvas.getContext("2d"); 
+const WIDTH = canvas.width; 
+const HEIGHT = canvas.height; 
+const touchControls = document.getElementById("touchControls"); 
+const virtualJoystick = document.getElementById("virtualJoystick"); 
+const joystickKnob = virtualJoystick.querySelector(".knob"); 
+const fireButton = document.getElementById("fireButton"); 
+const orientationHint = document.getElementById("orientationHint"); 
+const touchInput = { x: 0, y: 0, fire: false }; 
+let joystickActive = false; 
+let joystickPointerId = null; 
+
+/* ========================================================= 
+   GAME VARIABLES 
+   ========================================================= */ 
+let score = 0; 
+let lives = 3; 
+let gameRunning = false; // Starts paused until start sequence finishes
+let lastTime = 0; 
+let enemySpawnTimer = 0; 
+let stars = []; 
+let enemies = []; 
+let playerLasers = []; 
+let enemyLasers = []; 
+let explosions = []; 
+
+// Hit counters for controlling sound frequency
+let pistachioHits = 0;
+let cashewHits = 0;
+
+/* ========================================================= 
+   AUDIO LOADING 
+   ========================================================= */
+const sounds = {};
+
+function loadSound(name, path) {
+  const audio = new Audio();
+  audio.src = path;
+  sounds[name] = audio;
+}
+
+function playSound(sound) {
+  if (sound) {
+    sound.currentTime = 0;
+    sound.play().catch(function(e) {
+      console.warn("Audio play blocked until user interacts with page:", e);
+    });
+  }
+}
+
+function stopSound(sound) {
+  if (sound) {
+    sound.pause();
+    sound.currentTime = 0;
+  }
+}
+
+/* ========================================================= 
+   IMAGE LOADING 
+   ========================================================= */ 
+const images = {}; 
+let imagesToLoad = 0; 
+let imagesLoaded = 0; 
+
+function loadImage(name, path) { 
+  imagesToLoad++; 
+  const image = new Image(); 
+  image.src = path; 
+  image.onload = function() { imagesLoaded++; }; 
+  image.onerror = function() { 
+    console.warn("Missing image:", path); 
+    imagesLoaded++; 
+  }; 
+  images[name] = image; 
+} 
+
+function loadAllAssets() { 
+  // Load Sounds
+  loadSound("startMusic", ASSETS.startMusic);
+  loadSound("inflate", ASSETS.inflateSound);
+  loadSound("deflate", ASSETS.deflateSound);
+  loadSound("explosion", ASSETS.explosionSound);
+  loadSound("pistachioDeath", ASSETS.pistachioDeathSound);
+  loadSound("cashewDeath", ASSETS.cashewDeathSound);
+  loadSound("playerLaser", ASSETS.playerLaserSound);
+  loadSound("endSong", ASSETS.endSong);
+
+  // Load Images
+  ASSETS.playerFrames.forEach(function(path, index) {
+    loadImage("player" + (index + 1), path);
+  });
+  loadImage("playerLaser", ASSETS.playerLaser); 
+  loadImage("greenLaser", ASSETS.greenLaser); 
+  loadImage("beigeLaser", ASSETS.beigeLaser); 
+  
+  ASSETS.pistachioFrames.forEach(function(path, index) { 
+    loadImage("pistachio" + index, path); 
+  }); 
+  ASSETS.cashewFrames.forEach(function(path, index) { 
+    loadImage("cashew" + index, path); 
+  }); 
+  ASSETS.pistachioExplosion.forEach(function(path, index) { 
+    loadImage("pistachioExplosion" + index, path); 
+  }); 
+  
+  if (Array.isArray(ASSETS.cashewExplosion)) {
+    ASSETS.cashewExplosion.forEach(function(path, index) { 
+      loadImage("cashewExplosion" + index, path); 
+    }); 
+  } else {
+    loadImage("cashewExplosion", ASSETS.cashewExplosion);
+  }
+} 
+loadAllAssets(); 
+
+/* ========================================================= 
+   PLAYER 
+   ========================================================= */ 
+const player = { 
+  x: 100, 
+  y: HEIGHT / 2, 
+  width: 85, 
+  height: 85, 
+  speed: 380, 
+  fireTimer: 0, 
+  fireDelay: 0.28, 
+  invincibleTimer: 0,
+  currentImageKey: "player1"
+}; 
+
+/* ========================================================= 
+   KEYBOARD & TOUCH CONTROLS
+   ========================================================= */ 
+const keys = {}; 
+window.addEventListener("keydown", function(event) { 
+  keys[event.code] = true; 
+  if (event.code === "Space") { 
+    event.preventDefault(); 
+  } 
+}); 
+window.addEventListener("keyup", function(event) { 
+  keys[event.code] = false; 
+}); 
+
+function preventDefaultTouch(event) { 
+  event.preventDefault(); 
+} 
+document.addEventListener("touchmove", preventDefaultTouch, { passive: false }); 
+document.addEventListener("touchstart", preventDefaultTouch, { passive: false }); 
+document.addEventListener("selectstart", function(event) { 
+  event.preventDefault(); 
+}); 
+
+function setJoystickPosition(x, y) { 
+  const maxDistance = 34; 
+  const clampedX = Math.max(-maxDistance, Math.min(maxDistance, x)); 
+  const clampedY = Math.max(-maxDistance, Math.min(maxDistance, y)); 
+  joystickKnob.style.transform = "translate(calc(-50% + " + clampedX + "px), calc(-50% + " + clampedY + "px))"; 
+  touchInput.x = Math.max(-1, Math.min(1, clampedX / maxDistance)); 
+  touchInput.y = Math.max(-1, Math.min(1, clampedY / maxDistance)); 
+} 
+
+function resetJoystick() { 
+  joystickActive = false; 
+  joystickPointerId = null; 
+  joystickKnob.style.transform = "translate(-50%, -50%)"; 
+  touchInput.x = 0; 
+  touchInput.y = 0; 
+} 
+
+function updateJoystickFromPoint(clientX, clientY) { 
+  const rect = virtualJoystick.getBoundingClientRect(); 
+  const centerX = rect.left + rect.width / 2; 
+  const centerY = rect.top + rect.height / 2; 
+  const deltaX = clientX - centerX; 
+  const deltaY = clientY - centerY; 
+  const distance = Math.min(34, Math.hypot(deltaX, deltaY)); 
+  const x = distance === 0 ? 0 : (deltaX / Math.hypot(deltaX, deltaY)) * distance; 
+  const y = distance === 0 ? 0 : (deltaY / Math.hypot(deltaX, deltaY)) * distance; 
+  setJoystickPosition(x, y); 
+} 
+
+function handleJoystickPointerDown(event) { 
+  event.preventDefault(); 
+  joystickActive = true; 
+  joystickPointerId = event.pointerId; 
+  virtualJoystick.setPointerCapture(event.pointerId); 
+  updateJoystickFromPoint(event.clientX, event.clientY); 
+} 
+
+function handleJoystickPointerMove(event) { 
+  if (!joystickActive || event.pointerId !== joystickPointerId) { 
+    return; 
+  } 
+  event.preventDefault(); 
+  updateJoystickFromPoint(event.clientX, event.clientY); 
+} 
+
+function handleJoystickPointerUp(event) { 
+  if (event.pointerId !== joystickPointerId) { 
+    return; 
+  } 
+  resetJoystick(); 
+} 
+
+function setFirePressed(isPressed) { 
+  touchInput.fire = isPressed; 
+  fireButton.classList.toggle("active", isPressed); 
+} 
+
+virtualJoystick.addEventListener("pointerdown", handleJoystickPointerDown); 
+virtualJoystick.addEventListener("pointermove", handleJoystickPointerMove); 
+virtualJoystick.addEventListener("pointerup", handleJoystickPointerUp); 
+virtualJoystick.addEventListener("pointercancel", handleJoystickPointerUp); 
+
+fireButton.addEventListener("pointerdown", function(event) { 
+  event.preventDefault(); 
+  setFirePressed(true); 
+}); 
+fireButton.addEventListener("pointerup", function(event) { 
+  event.preventDefault(); 
+  setFirePressed(false); 
+}); 
+fireButton.addEventListener("pointerleave", function(event) { 
+  event.preventDefault(); 
+  setFirePressed(false); 
+}); 
+fireButton.addEventListener("pointercancel", function(event) { 
+  event.preventDefault(); 
+  setFirePressed(false); 
+}); 
+
+window.addEventListener("pointerup", function(event) { 
+  if (joystickActive && event.pointerId === joystickPointerId) { 
+    resetJoystick(); 
+  } 
+}); 
+
+function updateTouchControlsVisibility() { 
+  const isTouchDevice = window.matchMedia("(pointer: coarse)").matches || "ontouchstart" in window; 
+  const isPortrait = window.innerHeight >= window.innerWidth; 
+  const shouldShowControls = isTouchDevice && !isPortrait; 
+  touchControls.classList.toggle("hidden", !shouldShowControls); 
+  orientationHint.classList.toggle("visible", isTouchDevice && isPortrait); 
+} 
+
+window.addEventListener("resize", updateTouchControlsVisibility); 
+window.addEventListener("orientationchange", updateTouchControlsVisibility); 
+updateTouchControlsVisibility(); 
+
+/* ========================================================= 
+   STARS 
+   ========================================================= */ 
+function createStars() { 
+  stars = []; 
+  for (let i = 0; i < 130; i++) { 
+    stars.push({ 
+      x: Math.random() * WIDTH, 
+      y: Math.random() * HEIGHT, 
+      size: Math.random() * 2 + 0.5, 
+      speed: Math.random() * 60 + 20 
+    }); 
+  } 
+} 
+createStars(); 
+
+/* ========================================================= 
+   ENEMY CREATION 
+   ========================================================= */ 
+function createEnemy() { 
+  const type = Math.random() < 0.5 ? "pistachio" : "cashew"; 
+  enemies.push({ 
+    type: type, 
+    x: WIDTH + 100, 
+    y: 80 + Math.random() * (HEIGHT - 160), 
+    width: 82, 
+    height: 82, 
+    speed: type === "pistachio" ? 95 : 70, 
+    frame: 0, 
+    animationTimer: 0, 
+    shootTimer: 1.5 + Math.random() * 2, 
+    rotation: 0, 
+    alive: true 
+  }); 
+} 
+
+/* ========================================================= 
+   LASERS 
+   ========================================================= */ 
+function firePlayerLaser() { 
+  playerLasers.push({ 
+    x: player.x + player.width - 5, 
+    y: player.y + player.height / 2, 
+    width: 42, 
+    height: 10, 
+    speed: 650 
+  }); 
+  playSound(sounds.playerLaser);
+} 
+
+function fireEnemyLaser(enemy) { 
+  enemyLasers.push({ 
+    x: enemy.x - 100, 
+    y: enemy.y + enemy.height / 2 - 12, 
+    width: 100, 
+    height: 24, 
+    speed: 320, 
+    type: enemy.type 
+  }); 
+} 
+
+/* ========================================================= 
+   EXPLOSIONS 
+   ========================================================= */ 
+function createExplosion(enemy) { 
+  explosions.push({ 
+    x: enemy.x + enemy.width / 2, 
+    y: enemy.y + enemy.height / 2, 
+    type: enemy.type, 
+    frame: 0, 
+    timer: 0, 
+    finished: false 
+  }); 
+} 
+
+/* ========================================================= 
+   UPDATE PLAYER 
+   ========================================================= */ 
+function updatePlayer(delta) { 
+  let moveX = 0; 
+  let moveY = 0; 
+  const leftHeld = keys["ArrowLeft"] || keys["KeyA"] || touchInput.x < -0.2; 
+  const rightHeld = keys["ArrowRight"] || keys["KeyD"] || touchInput.x > 0.2; 
+  const upHeld = keys["ArrowUp"] || keys["KeyW"] || touchInput.y < -0.2; 
+  const downHeld = keys["ArrowDown"] || keys["KeyS"] || touchInput.y > 0.2; 
+  
+  if (leftHeld) { moveX -= 1; } 
+  if (rightHeld) { moveX += 1; } 
+  if (upHeld) { moveY -= 1; } 
+  if (downHeld) { moveY += 1; } 
+  
+  player.x += moveX * player.speed * delta; 
+  player.y += moveY * player.speed * delta; 
+  player.x = Math.max(0, Math.min(WIDTH - player.width, player.x)); 
+  player.y = Math.max(40, Math.min(HEIGHT - player.height - 35, player.y)); 
+  
+  player.fireTimer -= delta; 
+  const fireHeld = keys["Space"] || touchInput.fire; 
+  if (fireHeld && player.fireTimer <= 0) { 
+    firePlayerLaser(); 
+    player.fireTimer = player.fireDelay; 
+  } 
+  if (player.invincibleTimer > 0) { 
+    player.invincibleTimer -= delta; 
+  } 
+} 
+
+/* ========================================================= 
+   UPDATE ENEMIES 
+   ========================================================= */ 
+function updateEnemies(delta) { 
+  enemies.forEach(function(enemy) { 
+    enemy.x -= enemy.speed * delta; 
+    enemy.animationTimer += delta; 
+    enemy.shootTimer -= delta; 
+    if (enemy.type === "pistachio") { 
+      if (enemy.animationTimer > 0.20) { 
+        enemy.frame = (enemy.frame + 1) % 4; 
+        enemy.animationTimer = 0; 
+      } 
+    } 
+    if (enemy.type === "cashew") { 
+      enemy.rotation += 35 * delta; 
+    } 
+    if (enemy.shootTimer <= 0) { 
+      fireEnemyLaser(enemy); 
+      enemy.shootTimer = 1.5 + Math.random() * 2; 
+    } 
+  }); 
+  enemies = enemies.filter(function(enemy) { return (enemy.x > -150); }); 
+} 
+
+/* ========================================================= 
+   UPDATE LASERS 
+   ========================================================= */ 
+function updateLasers(delta) { 
+  playerLasers.forEach(function(laser) { laser.x += laser.speed * delta; }); 
+  enemyLasers.forEach(function(laser) { laser.x -= laser.speed * delta; }); 
+  playerLasers = playerLasers.filter(function(laser) { return (laser.x < WIDTH + 100); }); 
+  enemyLasers = enemyLasers.filter(function(laser) { return (laser.x > -100); }); 
+} 
+
+/* ========================================================= 
+   UPDATE EXPLOSIONS 
+   ========================================================= */ 
+function updateExplosions(delta) { 
+  explosions.forEach(function(explosion) { 
+    explosion.timer += delta; 
+    if (explosion.timer > 0.12) { 
+      explosion.frame++; 
+      explosion.timer = 0; 
+    } 
+  }); 
+  explosions = explosions.filter(function(explosion) { return (explosion.frame < 4); }); 
+} 
+
+/* ========================================================= 
+   COLLISION & DAMAGE
+   ========================================================= */ 
+function rectanglesCollide(a, b) { 
+  return (
+    a.x < b.x + b.width && 
+    a.x + a.width > b.x && 
+    a.y < b.y + b.height && 
+    a.y + a.height > b.y
+  ); 
+} 
+
+function checkCollisions() { 
+  playerLasers.forEach(function(laser) { 
+    enemies.forEach(function(enemy) { 
+      if (enemy.alive && rectanglesCollide(laser, enemy)) { 
+        enemy.alive = false; 
+        laser.hit = true; 
+        score += enemy.type === "pistachio" ? 100 : 150; 
+        
+        // Play explosion sound on every hit
+        playSound(sounds.explosion);
+
+        // Play special sound on every 4th pistachio hit or every 6th cashew hit
+        if (enemy.type === "pistachio") {
+          pistachioHits++;
+          if (pistachioHits % 4 === 0) {
+            playSound(sounds.pistachioDeath);
+          }
+        } else if (enemy.type === "cashew") {
+          cashewHits++;
+          if (cashewHits % 6 === 0) {
+            playSound(sounds.cashewDeath);
+          }
+        }
+
+        createExplosion(enemy); 
+      } 
+    }); 
+  }); 
+  
+  enemies = enemies.filter(function(enemy) { return (enemy.alive); }); 
+  playerLasers = playerLasers.filter(function(laser) { return (!laser.hit); }); 
+  
+  if (player.invincibleTimer <= 0) { 
+    enemyLasers.forEach(function(laser) { 
+      if (rectanglesCollide(laser, player)) { 
+        laser.hit = true; 
+        damagePlayer(); 
+      } 
+    }); 
+    enemies.forEach(function(enemy) { 
+      if (rectanglesCollide(enemy, player)) { 
+        enemy.alive = false; 
+        createExplosion(enemy); 
+        damagePlayer(); 
+      } 
+    }); 
+  } 
+  enemyLasers = enemyLasers.filter(function(laser) { return (!laser.hit); }); 
+} 
+
+function damagePlayer() { 
+  lives--; 
+  player.invincibleTimer = 2; 
+
+  if (lives === 2) {
+    player.currentImageKey = "player2";
+    playSound(sounds.inflate);
+  } else if (lives === 1) {
+    player.currentImageKey = "player3";
+    playSound(sounds.inflate);
+  } else if (lives <= 0) { 
+    // Freeze movement while sound finishes playing
+    gameRunning = false;
+    playSound(sounds.deflate);
+    
+    // Wait until deflate sound finishes before opening the game over screen
+    if (sounds.deflate) {
+      sounds.deflate.addEventListener("ended", function() {
+        endGame();
+      }, { once: true });
+    } else {
+      endGame();
+    }
+  } 
+} 
+
+/* ========================================================= 
+   DRAW HELPERS 
+   ========================================================= */ 
+function drawImageOrPlaceholder(image, x, y, width, height, color, label) { 
+  if (image && image.complete && image.naturalWidth > 0) { 
+    ctx.drawImage(image, x, y, width, height); 
+  } else { 
+    ctx.fillStyle = color; 
+    ctx.fillRect(x, y, width, height); 
+    ctx.fillStyle = "white"; 
+    ctx.font = "12px Arial"; 
+    ctx.textAlign = "center"; 
+    ctx.fillText(label, x + width / 2, y + height / 2); 
+  } 
+} 
+
+/* ========================================================= 
+   DRAW BACKGROUND 
+   ========================================================= */ 
+function drawBackground(delta) { 
+  ctx.fillStyle = "#030611"; 
+  ctx.fillRect(0, 0, WIDTH, HEIGHT); 
+  stars.forEach(function(star) { 
+    star.x -= star.speed * delta; 
+    if (star.x < 0) { 
+      star.x = WIDTH; 
+      star.y = Math.random() * HEIGHT; 
+    } 
+    ctx.fillStyle = "rgba(255,255,255,0.8)"; 
+    ctx.fillRect(star.x, star.y, star.size, star.size); 
+  }); 
+} 
+
+/* ========================================================= 
+   DRAW PLAYER 
+   ========================================================= */ 
+function drawPlayer() { 
+  if (player.invincibleTimer > 0 && Math.floor(player.invincibleTimer * 10) % 2 === 0) { 
+    return; 
+  } 
+  drawImageOrPlaceholder(
+    images[player.currentImageKey], 
+    player.x, 
+    player.y, 
+    player.width, 
+    player.height, 
+    "#32c8ff", 
+    "SHIP"
+  ); 
+} 
+
+/* ========================================================= 
+   DRAW ENEMIES 
+   ========================================================= */ 
+function drawEnemies() { 
+  enemies.forEach(function(enemy) { 
+    if (enemy.type === "pistachio") { 
+      drawImageOrPlaceholder(images["pistachio" + enemy.frame], enemy.x, enemy.y, enemy.width, enemy.height, "#5dbd35", "PISTACHIO"); 
+    } else { 
+      ctx.save(); 
+      ctx.translate(enemy.x + enemy.width / 2, enemy.y + enemy.height / 2); 
+      ctx.rotate(enemy.rotation * Math.PI / 180); 
+      drawImageOrPlaceholder(images.cashew0, -enemy.width / 2, -enemy.height / 2, enemy.width, enemy.height, "#d7b06a", "CASHEW"); 
+      ctx.restore(); 
+    } 
+  }); 
+} 
+
+/* ========================================================= 
+   DRAW LASERS 
+   ========================================================= */ 
+function drawLasers() { 
+  /* PLAYER LASERS */ 
+  playerLasers.forEach(function(laser) { 
+    drawImageOrPlaceholder(images.playerLaser, laser.x, laser.y, laser.width, laser.height, "#45dfff", ""); 
+  }); 
+
+  /* ENEMY LASERS */ 
+  enemyLasers.forEach(function(laser) { 
+    const image = laser.type === "pistachio" ? images.greenLaser : images.beigeLaser; 
+    const color = laser.type === "pistachio" ? "#55ff22" : "#f4d28b"; 
+
+    ctx.save(); 
+    ctx.translate(laser.x + laser.width / 2, laser.y + laser.height / 2); 
+    drawImageOrPlaceholder(image, -laser.width / 2, -laser.height / 2, laser.width, laser.height, color, ""); 
+    ctx.restore(); 
+  }); 
+} 
+
+/* ========================================================= 
+   DRAW EXPLOSIONS 
+   ========================================================= */ 
+function drawExplosions() { 
+  explosions.forEach(function(explosion) { 
+    const imageName = explosion.type === "cashew" ? "cashewExplosion" : explosion.type + "Explosion" + explosion.frame; 
+    const imageToDraw = images[imageName] || images[explosion.type + "Explosion0"];
+    
+    drawImageOrPlaceholder(
+      imageToDraw, 
+      explosion.x - 55, 
+      explosion.y - 55, 
+      110, 
+      110, 
+      explosion.type === "pistachio" ? "#49ff24" : "#ffb21d", 
+      "BOOM"
+    ); 
+  }); 
+} 
+
+/* ========================================================= 
+   UPDATE HUD 
+   ========================================================= */ 
+function updateHUD() { 
+  document.getElementById("score").textContent = score; 
+  document.getElementById("lives").textContent = lives; 
+} 
+
+/* ========================================================= 
+   MAIN GAME LOOP 
+   ========================================================= */ 
+function gameLoop(timestamp) { 
+  const delta = Math.min((timestamp - lastTime) / 1000, 0.05); 
+  lastTime = timestamp; 
+  
+  drawBackground(delta); 
+  
+  if (gameRunning) { 
+    enemySpawnTimer -= delta; 
+    if (enemySpawnTimer <= 0) { 
+      createEnemy(); 
+      enemySpawnTimer = 1.3 + Math.random() * 1.2; 
+    } 
+    updatePlayer(delta); 
+    updateEnemies(delta); 
+    updateLasers(delta); 
+    updateExplosions(delta); 
+    checkCollisions(); 
+    updateHUD(); 
+  } 
+  
+  drawPlayer(); 
+  drawEnemies(); 
+  drawLasers(); 
+  drawExplosions(); 
+  
+  requestAnimationFrame(gameLoop); 
+} 
+
+/* ========================================================= 
+   GAME OVER 
+   ========================================================= */ 
+function endGame() { 
+  gameRunning = false; 
+  document.getElementById("finalScore").textContent = score; 
+  document.getElementById("gameOver").style.display = "flex"; 
+  playSound(sounds.endSong);
+} 
+
+/* ========================================================= 
+   RESET / START GAME
+   ========================================================= */ 
+function resetGame() {
+  stopSound(sounds.startMusic);
+  stopSound(sounds.endSong);
+  stopSound(sounds.deflate);
+  score = 0; 
+  lives = 3; 
+  enemies = []; 
+  playerLasers = []; 
+  enemyLasers = []; 
+  explosions = []; 
+  pistachioHits = 0; 
+  cashewHits = 0; 
+  player.x = 100; 
+  player.y = HEIGHT / 2; 
+  player.invincibleTimer = 0; 
+  player.currentImageKey = "player1"; 
+  gameRunning = true; 
+}
+
+/* ========================================================= 
+   BUTTON LISTENERS
+   ========================================================= */ 
+const startBtn = document.getElementById("startButton");
+
+startBtn.addEventListener("click", function() { 
+  // Add flashing effect on button press
+  startBtn.classList.add("flashing"); 
+
+  // Play start music
+  playSound(sounds.startMusic);
+
+  // Wait until start music finishes playing to start game
+  if (sounds.startMusic) {
+    sounds.startMusic.addEventListener("ended", function() {
+      document.getElementById("startScreen").style.display = "none"; 
+      startBtn.classList.remove("flashing");
+      resetGame();
+    }, { once: true });
+  } else {
+    document.getElementById("startScreen").style.display = "none"; 
+    startBtn.classList.remove("flashing");
+    resetGame();
+  }
+}); 
+
+document.getElementById("restartButton").addEventListener("click", function() { 
+  document.getElementById("gameOver").style.display = "none"; 
+  resetGame();
+}); 
+
+requestAnimationFrame(gameLoop); 
+</script>
+</body> 
+</html>
