@@ -200,7 +200,9 @@ const sounds = {};
 
 function loadSound(name, path) {
   const audio = new Audio();
+  audio.preload = "auto";
   audio.src = path;
+  audio.load();
   sounds[name] = audio;
 }
 
@@ -218,6 +220,43 @@ function stopSound(sound) {
     sound.pause();
     sound.currentTime = 0;
   }
+}
+
+/* =========================================================
+   iOS / iPadOS AUDIO UNLOCK
+   Safari on iPhone/iPad will silently block audio.play()
+   unless that exact <audio> element has already been played
+   once directly inside a real tap/click event. Our game only
+   ever triggers playerLaser/explosion/death/etc. sounds later
+   from inside the game loop, which does NOT count as a user
+   gesture -- so without this, those sounds never play on
+   iPad even though startMusic (played directly in the Start
+   button handler) works fine.
+   This runs through every loaded sound the moment the Start
+   button is tapped, plays each one for an instant to unlock
+   it, then immediately pauses/resets it (except startMusic,
+   which we want to actually keep playing).
+   ========================================================= */
+function unlockAllSoundsForIOS() {
+  Object.keys(sounds).forEach(function(key) {
+    const audio = sounds[key];
+    if (!audio) { return; }
+    const playPromise = audio.play();
+    if (playPromise && typeof playPromise.then === "function") {
+      playPromise.then(function() {
+        if (key !== "startMusic") {
+          audio.pause();
+          audio.currentTime = 0;
+        }
+      }).catch(function() {
+        // If this fails, the browser didn't treat the tap as a
+        // valid gesture context; nothing more we can do here.
+      });
+    } else if (key !== "startMusic") {
+      audio.pause();
+      audio.currentTime = 0;
+    }
+  });
 }
 
 /* ========================================================= 
@@ -843,6 +882,10 @@ function resetGame() {
 const startBtn = document.getElementById("startButton");
 
 startBtn.addEventListener("click", function() { 
+  // Unlock every sound effect on iOS/iPadOS Safari (must happen
+  // synchronously inside this real tap event -- see function above)
+  unlockAllSoundsForIOS();
+
   // Add flashing effect on button press
   startBtn.classList.add("flashing"); 
 
